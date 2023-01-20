@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
@@ -7,14 +6,7 @@ using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using System.Runtime.CompilerServices;
 using System.Net.Http;
-using System.Net.Http.Json;
-using System.Reflection.Metadata;
-using System.Collections.Generic;
-using System.Text.Json;
-using Newtonsoft.Json.Linq;
-using System.Diagnostics.Metrics;
 
 namespace weather_api_c
 {
@@ -25,12 +17,11 @@ namespace weather_api_c
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
             ILogger log)
         {
-            string city = req.Query["name"];
-            log.LogInformation($"name:{ city }");
+            // expecting to have a `name` query
+            if(req.Query.Count == 0)
+                return new BadRequestObjectResult("Not supported request");
 
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            dynamic data = JsonConvert.DeserializeObject(requestBody);
-            city = city ?? data?.name;
+            string city = req.Query["name"];
 
             if (string.IsNullOrEmpty(city))
                 return new NotFoundObjectResult("City name not found");
@@ -46,14 +37,15 @@ namespace weather_api_c
                 HttpClient newClient = new HttpClient();
                 HttpRequestMessage newRequest = new HttpRequestMessage(HttpMethod.Get, url);
 
-                //Read Server Response
                 HttpResponseMessage response = await newClient.SendAsync(newRequest);
                 string resp = await response.Content.ReadAsStringAsync();
+
                 //log.LogInformation(resp);
                 var jsonResp = JsonConvert.DeserializeObject<OpenWeather>(resp);
 
-                log.LogInformation($"temp:{jsonResp.main.temp}");
-                log.LogInformation($"condition:{jsonResp.weather[0].description}");
+                // when open weather api returns error, return the error message
+                if (jsonResp.cod != "200")
+                    return new BadRequestObjectResult(jsonResp.message);
 
                 temperature = jsonResp.main.temp;
                 condition = jsonResp.weather[0].description;
@@ -67,21 +59,6 @@ namespace weather_api_c
             {
                 return new BadRequestObjectResult($"Something went wrong: {ex.ToString()}");
             }
-
         }
-    }
-
-    public class OpenWeather
-    {
-        public List<Weather> weather { get; set; }
-        public main main { get; set; }
-    }
-    public class Weather
-    {
-        public string description { get; set; }
-    }
-    public class main
-    {
-        public float temp { get; set; }
     }
 }
